@@ -397,11 +397,13 @@ class AsvzEnroller:
             while not enrolled:
                 if self.enrollment_start < datetime.today():
                     logging.info(
-                        "Enrollment is already open. Checking for available places."
+                        "Enrollment is already open. Checking for available places (WITHOUT logging in)."
                     )
+                    # Check for free places WITHOUT logging in first
+                    # This significantly reduces detectability
                     self.__wait_for_free_places(driver)
 
-                logging.info("Lesson has free places")
+                logging.info("Lesson has free places - now logging in to enroll")
 
                 self.__organisation_login(driver)
 
@@ -419,8 +421,11 @@ class AsvzEnroller:
                     time.sleep(5)
                 except TimeoutException as e:
                     logging.info(
-                        "Place was already taken in the meantime. Rechecking for available places."
+                        "Place was already taken in the meantime. Reloading page to check again without login."
                     )
+                    # Reload the page to go back to non-logged-in state
+                    driver.get(self.lesson_url)
+                    driver.implicitly_wait(3)
                     continue
 
                 logging.info("Submitted enrollment request.")
@@ -662,6 +667,12 @@ class AsvzEnroller:
         driver.find_element(By.XPATH, "//button[@type='submit']").click()
 
     def __wait_for_free_places(self, driver):
+        """
+        Wait for free places to become available.
+        This method checks WITHOUT logging in, making it much less detectable.
+        """
+        import random
+
         while True:
             num_free_spots_raw = driver.find_element(
                 By.XPATH, "//dl[contains(., 'Freie Plätze')]/dd/span"
@@ -670,6 +681,7 @@ class AsvzEnroller:
 
             if num_free_spots > 0:
                 # has free places
+                logging.info(f"Found {num_free_spots} free place(s)!")
                 return
 
             if datetime.today() > self.lesson_start:
@@ -677,7 +689,8 @@ class AsvzEnroller:
                     "Stopping enrollment because lesson has started."
                 )
 
-            retry_interval_sec = 1 * 30
+            # Randomize retry interval between 25-90 seconds to appear more human-like
+            retry_interval_sec = random.randint(25, 90)
             logging.info(
                 "Lesson is booked out. Rechecking in {} secs..".format(
                     retry_interval_sec
